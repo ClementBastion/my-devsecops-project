@@ -77,6 +77,7 @@ resource "aws_iam_policy" "cicd" {
           "lambda:AddPermission", "lambda:RemovePermission",
           "lambda:CreateEventSourceMapping", "lambda:UpdateEventSourceMapping",
           "lambda:DeleteEventSourceMapping", "lambda:GetEventSourceMapping",
+          "lambda:ListVersionsByFunction",
           "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags"
         ]
         Resource = "arn:aws:lambda:${local.aws_region}:*:function:${local.project_name}-*"
