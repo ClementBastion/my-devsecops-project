@@ -6,11 +6,13 @@ on:
     paths:
       - "lambda-a/**"
       - "lambda-b/**"
+      - ".github/workflows/deploy.yml"
   pull_request:
     branches: [main]
     paths:
       - "lambda-a/**"
       - "lambda-b/**"
+      - ".github/workflows/deploy.yml"
 
 env:
   AWS_REGION: eu-west-3

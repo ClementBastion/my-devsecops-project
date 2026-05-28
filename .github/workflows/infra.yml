@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "terraform/**"
+      - ".github/workflows/infra.yml"
   pull_request:
     branches: [main]
     paths:
       - "terraform/**"
+      - ".github/workflows/infra.yml"
 
 env:
   AWS_REGION: eu-west-3
