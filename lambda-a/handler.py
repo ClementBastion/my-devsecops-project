@@ -129,3 +129,4 @@ def _response(status_code: int, body: dict) -> dict:
         },
         "body": json.dumps(body, ensure_ascii=False),
     }
+
