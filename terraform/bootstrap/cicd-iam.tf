@@ -18,9 +18,9 @@ resource "aws_iam_access_key" "cicd" {
   user = aws_iam_user.cicd.name
 }
 
-resource "aws_iam_user_policy" "cicd" {
-  name = "${local.project_name}-cicd-policy"
-  user = aws_iam_user.cicd.name
+resource "aws_iam_policy" "cicd" {
+  name        = "${local.project_name}-cicd-policy"
+  description = "Permissions CI/CD GitHub Actions pour ${local.project_name}"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -195,6 +195,11 @@ resource "aws_iam_user_policy" "cicd" {
       }
     ]
   })
+}
+
+resource "aws_iam_user_policy_attachment" "cicd" {
+  user       = aws_iam_user.cicd.name
+  policy_arn = aws_iam_policy.cicd.arn
 }
 
 output "cicd_access_key_id" {
