@@ -1,0 +1,436 @@
+# ══════════════════════════════════════════════════════════════
+# Pipeline GitLab CI — DevSecOps MYFTPDR
+#
+# Stages :
+#   1. test       → tests unitaires + couverture
+#   2. quality    → SonarQube (qualité + SAST)
+#   3. security   → scan dépendances + secrets
+#   4. build      → build image Docker + push ECR
+#   5. deploy     → Terraform apply
+#   6. notify     → notification SNS résultat pipeline
+#
+# Variables à configurer dans GitLab CI/CD Settings :
+#   AWS_ACCESS_KEY_ID         → clé IAM CI/CD (droits limités)
+#   AWS_SECRET_ACCESS_KEY     → secret IAM CI/CD
+#   AWS_REGION                → ex: eu-west-3
+#   AWS_ACCOUNT_ID            → ID compte AWS
+#   SONAR_TOKEN               → token SonarQube
+#   SONAR_HOST_URL            → URL SonarQube (ex: https://sonar.monprojet.com)
+#   TF_VAR_alert_email        → email alertes SNS
+#   SNS_TOPIC_ARN             → ARN topic SNS pour notif pipeline
+# ══════════════════════════════════════════════════════════════
+
+stages:
+  - test
+  - quality
+  - security
+  - build
+  - deploy
+  - notify
+
+# ──────────────────────────────────────────────
+# Variables globales
+# ──────────────────────────────────────────────
+variables:
+  # Docker
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+
+  # ECR
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+  IMAGE_LAMBDA_A: "${ECR_REGISTRY}/myftpdr/lambda-a"
+  IMAGE_LAMBDA_B: "${ECR_REGISTRY}/myftpdr/lambda-b"
+  IMAGE_TAG: "${CI_COMMIT_SHA}"
+
+  # Terraform
+  TF_DIR: "terraform"
+  TF_VERSION: "1.7.0"
+
+  # Python
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+
+# ──────────────────────────────────────────────
+# Cache partagé entre jobs
+# ──────────────────────────────────────────────
+.python_cache: &python_cache
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-python"
+    paths:
+      - .pip-cache/
+      - lambda-a/.venv/
+      - lambda-b/.venv/
+
+# ──────────────────────────────────────────────
+# Règles de déclenchement réutilisables
+# ──────────────────────────────────────────────
+.rules_main: &rules_main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+.rules_deploy: &rules_deploy
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual  # Deploy prod = manuel obligatoire
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: on_success
+
+# ══════════════════════════════════════════════
+# STAGE 1 — TEST
+# Tests unitaires + couverture de code
+# ══════════════════════════════════════════════
+
+test:lambda-a:
+  stage: test
+  image: python:3.12-slim
+  <<: *python_cache
+  <<: *rules_main
+  before_script:
+    - cd lambda-a
+    - pip install --quiet virtualenv
+    - virtualenv .venv
+    - source .venv/bin/activate
+    - pip install --quiet -r requirements.txt -r requirements-dev.txt
+  script:
+    - source .venv/bin/activate
+    - pytest tests/
+        --cov=src
+        --cov-report=xml:coverage.xml
+        --cov-report=term-missing
+        --cov-fail-under=80
+        --junitxml=junit.xml
+        -v
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: lambda-a/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: lambda-a/coverage.xml
+    expire_in: 7 days
+
+test:lambda-b:
+  stage: test
+  image: python:3.12-slim
+  <<: *python_cache
+  <<: *rules_main
+  before_script:
+    - cd lambda-b
+    - pip install --quiet virtualenv
+    - virtualenv .venv
+    - source .venv/bin/activate
+    - pip install --quiet -r requirements.txt -r requirements-dev.txt
+  script:
+    - source .venv/bin/activate
+    - pytest tests/
+        --cov=src
+        --cov-report=xml:coverage.xml
+        --cov-report=term-missing
+        --cov-fail-under=80
+        --junitxml=junit.xml
+        -v
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: lambda-b/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: lambda-b/coverage.xml
+    expire_in: 7 days
+
+# ══════════════════════════════════════════════
+# STAGE 2 — QUALITY
+# SonarQube : qualité du code + SAST
+# Bloque le pipeline si Quality Gate KO
+# ══════════════════════════════════════════════
+
+sonarqube:
+  stage: quality
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  <<: *rules_main
+  needs:
+    - test:lambda-a
+    - test:lambda-b
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"  # Full clone requis pour blame analysis
+  cache:
+    key: sonar-cache
+    paths:
+      - .sonar/cache
+  script:
+    - sonar-scanner
+        -Dsonar.projectKey=myftpdr
+        -Dsonar.projectName="MYFTPDR DevSecOps"
+        -Dsonar.sources=lambda-a/src,lambda-b/src
+        -Dsonar.tests=lambda-a/tests,lambda-b/tests
+        -Dsonar.python.coverage.reportPaths=lambda-a/coverage.xml,lambda-b/coverage.xml
+        -Dsonar.python.xunit.reportPath=lambda-a/junit.xml,lambda-b/junit.xml
+        -Dsonar.qualitygate.wait=true
+        -Dsonar.host.url=${SONAR_HOST_URL}
+        -Dsonar.token=${SONAR_TOKEN}
+  allow_failure: false  # Quality Gate bloquant
+
+# ══════════════════════════════════════════════
+# STAGE 3 — SECURITY
+# 3a. Scan des dépendances (CVE connues)
+# 3b. Détection de secrets dans le code
+# 3c. Scan SAST GitLab natif
+# ══════════════════════════════════════════════
+
+security:dependency-scan:
+  stage: security
+  image: python:3.12-slim
+  <<: *rules_main
+  needs: []  # Peut tourner en parallèle des tests
+  before_script:
+    - pip install --quiet pip-audit safety
+  script:
+    # pip-audit : CVE sur les dépendances PyPI
+    - echo "=== pip-audit Lambda A ==="
+    - pip-audit -r lambda-a/requirements.txt --format json -o lambda-a/pip-audit.json || true
+    - pip-audit -r lambda-a/requirements.txt  # Affichage lisible
+
+    - echo "=== pip-audit Lambda B ==="
+    - pip-audit -r lambda-b/requirements.txt --format json -o lambda-b/pip-audit.json || true
+    - pip-audit -r lambda-b/requirements.txt
+
+    # Safety : base de données vulnérabilités supplémentaire
+    - echo "=== Safety check ==="
+    - safety check -r lambda-a/requirements.txt --output text
+    - safety check -r lambda-b/requirements.txt --output text
+  artifacts:
+    when: always
+    paths:
+      - lambda-a/pip-audit.json
+      - lambda-b/pip-audit.json
+    expire_in: 30 days
+  allow_failure: false
+
+security:secret-detection:
+  stage: security
+  image: trufflesecurity/trufflehog:latest
+  <<: *rules_main
+  needs: []
+  entrypoint: [""]
+  script:
+    - trufflehog filesystem .
+        --fail
+        --no-update
+        --exclude-paths=.trufflehog-ignore
+        --json > trufflehog-report.json || (cat trufflehog-report.json && exit 1)
+  artifacts:
+    when: always
+    paths:
+      - trufflehog-report.json
+    expire_in: 30 days
+  allow_failure: false  # Un secret détecté = pipeline bloqué
+
+security:terraform-scan:
+  stage: security
+  image:
+    name: aquasec/tfsec:latest
+    entrypoint: [""]
+  <<: *rules_main
+  needs: []
+  script:
+    - tfsec ${TF_DIR}
+        --format junit
+        --out tfsec-report.xml
+        --minimum-severity HIGH
+    - tfsec ${TF_DIR} --minimum-severity HIGH  # Affichage lisible
+  artifacts:
+    when: always
+    reports:
+      junit: tfsec-report.xml
+    expire_in: 30 days
+  allow_failure: false
+
+# ══════════════════════════════════════════════
+# STAGE 4 — BUILD
+# Build images Docker + push ECR
+# Tag = SHA commit (immuable, traçable)
+# ══════════════════════════════════════════════
+
+.build_template: &build_template
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  <<: *rules_main
+  before_script:
+    # Authentification ECR via AWS CLI
+    - apk add --no-cache aws-cli
+    - aws ecr get-login-password --region ${AWS_REGION}
+      | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+build:lambda-a:
+  <<: *build_template
+  needs:
+    - sonarqube
+    - security:dependency-scan
+    - security:secret-detection
+    - security:terraform-scan
+  script:
+    - echo "=== Build Lambda A ==="
+    - docker build
+        --label "git.commit=${CI_COMMIT_SHA}"
+        --label "git.branch=${CI_COMMIT_REF_NAME}"
+        --label "build.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        --tag ${IMAGE_LAMBDA_A}:${IMAGE_TAG}
+        --tag ${IMAGE_LAMBDA_A}:latest
+        lambda-a/
+
+    # Scan de l'image construite (vuln dans l'image finale)
+    - echo "=== Scan image Lambda A ==="
+    - docker run --rm
+        -v /var/run/docker.sock:/var/run/docker.sock
+        aquasec/trivy:latest image
+        --exit-code 1
+        --severity HIGH,CRITICAL
+        --no-progress
+        ${IMAGE_LAMBDA_A}:${IMAGE_TAG}
+
+    # Push uniquement si le scan est clean
+    - docker push ${IMAGE_LAMBDA_A}:${IMAGE_TAG}
+    - docker push ${IMAGE_LAMBDA_A}:latest
+
+    # Export de l'URL d'image pour Terraform
+    - echo "LAMBDA_A_IMAGE=${IMAGE_LAMBDA_A}:${IMAGE_TAG}" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+
+build:lambda-b:
+  <<: *build_template
+  needs:
+    - sonarqube
+    - security:dependency-scan
+    - security:secret-detection
+    - security:terraform-scan
+  script:
+    - echo "=== Build Lambda B ==="
+    - docker build
+        --label "git.commit=${CI_COMMIT_SHA}"
+        --label "git.branch=${CI_COMMIT_REF_NAME}"
+        --label "build.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        --tag ${IMAGE_LAMBDA_B}:${IMAGE_TAG}
+        --tag ${IMAGE_LAMBDA_B}:latest
+        lambda-b/
+
+    - echo "=== Scan image Lambda B ==="
+    - docker run --rm
+        -v /var/run/docker.sock:/var/run/docker.sock
+        aquasec/trivy:latest image
+        --exit-code 1
+        --severity HIGH,CRITICAL
+        --no-progress
+        ${IMAGE_LAMBDA_B}:${IMAGE_TAG}
+
+    - docker push ${IMAGE_LAMBDA_B}:${IMAGE_TAG}
+    - docker push ${IMAGE_LAMBDA_B}:latest
+
+    - echo "LAMBDA_B_IMAGE=${IMAGE_LAMBDA_B}:${IMAGE_TAG}" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+
+# ══════════════════════════════════════════════
+# STAGE 5 — DEPLOY
+# Terraform plan (auto) + apply (manuel prod)
+# ══════════════════════════════════════════════
+
+terraform:plan:
+  stage: deploy
+  image:
+    name: hashicorp/terraform:${TF_VERSION}
+    entrypoint: [""]
+  <<: *rules_main
+  needs:
+    - build:lambda-a
+    - build:lambda-b
+  before_script:
+    - cd ${TF_DIR}
+    - terraform init -input=false
+  script:
+    - terraform validate
+    - terraform plan
+        -input=false
+        -out=tfplan
+        -var="environment=${CI_ENVIRONMENT_NAME:-dev}"
+  artifacts:
+    paths:
+      - ${TF_DIR}/tfplan
+    expire_in: 1 day
+
+terraform:apply:
+  stage: deploy
+  image:
+    name: hashicorp/terraform:${TF_VERSION}
+    entrypoint: [""]
+  <<: *rules_deploy
+  needs:
+    - terraform:plan
+  environment:
+    name: $CI_COMMIT_BRANCH
+    url: $API_GATEWAY_URL
+  before_script:
+    - cd ${TF_DIR}
+    - terraform init -input=false
+  script:
+    - terraform apply -input=false -auto-approve tfplan
+    # Export de l'URL API pour la variable d'environnement GitLab
+    - terraform output -raw api_gateway_url > ../api_url.txt
+    - echo "API_GATEWAY_URL=$(cat ../api_url.txt)" >> ../deploy.env
+  artifacts:
+    reports:
+      dotenv: deploy.env
+    paths:
+      - api_url.txt
+    expire_in: 7 days
+
+# ══════════════════════════════════════════════
+# STAGE 6 — NOTIFY
+# Notification SNS selon résultat du pipeline
+# ══════════════════════════════════════════════
+
+notify:success:
+  stage: notify
+  image: amazon/aws-cli:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+      when: on_success
+  needs:
+    - terraform:apply
+  script:
+    - aws sns publish
+        --region ${AWS_REGION}
+        --topic-arn ${SNS_TOPIC_ARN}
+        --subject "✅ Deploy réussi — ${CI_PROJECT_NAME} [${CI_COMMIT_BRANCH}]"
+        --message "Pipeline ${CI_PIPELINE_ID} terminé avec succès.
+Commit : ${CI_COMMIT_SHA}
+Auteur : ${CI_COMMIT_AUTHOR}
+Branch : ${CI_COMMIT_BRANCH}
+URL    : ${CI_PIPELINE_URL}"
+
+notify:failure:
+  stage: notify
+  image: amazon/aws-cli:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+      when: on_failure
+  script:
+    - aws sns publish
+        --region ${AWS_REGION}
+        --topic-arn ${SNS_TOPIC_ARN}
+        --subject "❌ Pipeline en échec — ${CI_PROJECT_NAME} [${CI_COMMIT_BRANCH}]"
+        --message "Pipeline ${CI_PIPELINE_ID} a échoué.
+Commit  : ${CI_COMMIT_SHA}
+Auteur  : ${CI_COMMIT_AUTHOR}
+Branch  : ${CI_COMMIT_BRANCH}
+Job KO  : ${CI_JOB_NAME}
+Logs    : ${CI_JOB_URL}"

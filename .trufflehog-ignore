@@ -1,0 +1,19 @@
+# Fichiers à exclure du scan de secrets TruffleHog
+# Format : un pattern glob par ligne
+
+# Exemples de tests (contiennent de fausses clés)
+**/tests/**
+**/*_test.py
+**/*test*.py
+
+# Documentation
+docs/
+*.md
+
+# Fixtures et données de test
+**/fixtures/**
+**/testdata/**
+
+# Fichiers générés
+**/.terraform/**
+**/__pycache__/**

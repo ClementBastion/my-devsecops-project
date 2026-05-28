@@ -1,0 +1,24 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+crash.log
+override.tf
+override.tf.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Lambda mnt (points de montage locaux)
+lambda-a/mnt/
+lambda-b/mnt/
+
+# IDE
+.idea/
+.vscode/
+*.swp
