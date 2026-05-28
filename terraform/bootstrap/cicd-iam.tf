@@ -1,15 +1,17 @@
 # ──────────────────────────────────────────────
 # IAM — Utilisateur CI/CD GitHub Actions
-# Permissions strictement limitées à :
-#   - Terraform state (S3 + DynamoDB)
-#   - ECR push/pull
-#   - Lambda deploy
-#   - Gestion des ressources du projet (infra TF)
+# À appliquer UNE SEULE FOIS avec des credentials admin.
+# NE PAS inclure dans le pipeline CI/CD.
 # ──────────────────────────────────────────────
 
+locals {
+  project_name = "myftpdr"
+  aws_region   = "eu-west-3"
+}
+
 resource "aws_iam_user" "cicd" {
-  name = "${var.project_name}-cicd"
-  tags = { Name = "${var.project_name}-cicd" }
+  name = "${local.project_name}-cicd"
+  tags = { Name = "${local.project_name}-cicd" }
 }
 
 resource "aws_iam_access_key" "cicd" {
@@ -17,7 +19,7 @@ resource "aws_iam_access_key" "cicd" {
 }
 
 resource "aws_iam_user_policy" "cicd" {
-  name = "${var.project_name}-cicd-policy"
+  name = "${local.project_name}-cicd-policy"
   user = aws_iam_user.cicd.name
 
   policy = jsonencode({
@@ -30,15 +32,15 @@ resource "aws_iam_user_policy" "cicd" {
         Effect = "Allow"
         Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
         Resource = [
-          "arn:aws:s3:::${var.project_name}-terraform-state",
-          "arn:aws:s3:::${var.project_name}-terraform-state/*"
+          "arn:aws:s3:::${local.project_name}-terraform-state",
+          "arn:aws:s3:::${local.project_name}-terraform-state/*"
         ]
       },
       {
         Sid      = "TerraformLockDynamoDB"
         Effect   = "Allow"
         Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-        Resource = "arn:aws:dynamodb:${var.aws_region}:*:table/${var.project_name}-terraform-locks"
+        Resource = "arn:aws:dynamodb:${local.aws_region}:*:table/${local.project_name}-terraform-locks"
       },
 
       # ── ECR ──────────────────────────────────────────────────────────
@@ -61,7 +63,7 @@ resource "aws_iam_user_policy" "cicd" {
           "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage",
           "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:DescribeImages"
         ]
-        Resource = "arn:aws:ecr:${var.aws_region}:*:repository/${var.project_name}/*"
+        Resource = "arn:aws:ecr:${local.aws_region}:*:repository/${local.project_name}/*"
       },
 
       # ── Lambda ───────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ resource "aws_iam_user_policy" "cicd" {
           "lambda:DeleteEventSourceMapping", "lambda:GetEventSourceMapping",
           "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags"
         ]
-        Resource = "arn:aws:lambda:${var.aws_region}:*:function:${var.project_name}-*"
+        Resource = "arn:aws:lambda:${local.aws_region}:*:function:${local.project_name}-*"
       },
       {
         Sid      = "LambdaEventSourceList"
@@ -92,8 +94,8 @@ resource "aws_iam_user_policy" "cicd" {
         Effect   = "Allow"
         Action   = "apigateway:*"
         Resource = [
-          "arn:aws:apigateway:${var.aws_region}::/apis",
-          "arn:aws:apigateway:${var.aws_region}::/apis/*"
+          "arn:aws:apigateway:${local.aws_region}::/apis",
+          "arn:aws:apigateway:${local.aws_region}::/apis/*"
         ]
       },
 
@@ -108,9 +110,9 @@ resource "aws_iam_user_policy" "cicd" {
           "events:TagResource", "events:UntagResource"
         ]
         Resource = [
-          "arn:aws:events:${var.aws_region}:*:event-bus/${var.project_name}-*",
-          "arn:aws:events:${var.aws_region}:*:rule/${var.project_name}-*",
-          "arn:aws:events:${var.aws_region}:*:rule/${var.project_name}-*/*"
+          "arn:aws:events:${local.aws_region}:*:event-bus/${local.project_name}-*",
+          "arn:aws:events:${local.aws_region}:*:rule/${local.project_name}-*",
+          "arn:aws:events:${local.aws_region}:*:rule/${local.project_name}-*/*"
         ]
       },
 
@@ -123,7 +125,7 @@ resource "aws_iam_user_policy" "cicd" {
           "sqs:GetQueueAttributes", "sqs:SetQueueAttributes",
           "sqs:GetQueueUrl", "sqs:TagQueue", "sqs:UntagQueue", "sqs:ListQueueTags"
         ]
-        Resource = "arn:aws:sqs:${var.aws_region}:*:${var.project_name}-*"
+        Resource = "arn:aws:sqs:${local.aws_region}:*:${local.project_name}-*"
       },
 
       # ── SNS ──────────────────────────────────────────────────────────
@@ -137,7 +139,7 @@ resource "aws_iam_user_policy" "cicd" {
           "sns:ListSubscriptionsByTopic",
           "sns:TagResource", "sns:UntagResource"
         ]
-        Resource = "arn:aws:sns:${var.aws_region}:*:${var.project_name}-*"
+        Resource = "arn:aws:sns:${local.aws_region}:*:${local.project_name}-*"
       },
 
       # ── IAM — rôles Lambda uniquement ────────────────────────────────
@@ -150,13 +152,13 @@ resource "aws_iam_user_policy" "cicd" {
           "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
           "iam:TagRole", "iam:UntagRole"
         ]
-        Resource = "arn:aws:iam::*:role/${var.project_name}-*"
+        Resource = "arn:aws:iam::*:role/${local.project_name}-*"
       },
       {
-        Sid    = "IAMPassRole"
-        Effect = "Allow"
-        Action = "iam:PassRole"
-        Resource = "arn:aws:iam::*:role/${var.project_name}-*"
+        Sid      = "IAMPassRole"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = "arn:aws:iam::*:role/${local.project_name}-*"
         Condition = {
           StringEquals = { "iam:PassedToService" = "lambda.amazonaws.com" }
         }
@@ -172,8 +174,8 @@ resource "aws_iam_user_policy" "cicd" {
           "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"
         ]
         Resource = [
-          "arn:aws:logs:${var.aws_region}:*:log-group:/aws/lambda/${var.project_name}-*",
-          "arn:aws:logs:${var.aws_region}:*:log-group:/aws/apigateway/${var.project_name}-*"
+          "arn:aws:logs:${local.aws_region}:*:log-group:/aws/lambda/${local.project_name}-*",
+          "arn:aws:logs:${local.aws_region}:*:log-group:/aws/apigateway/${local.project_name}-*"
         ]
       },
 
@@ -187,17 +189,13 @@ resource "aws_iam_user_policy" "cicd" {
           "cloudwatch:TagResource", "cloudwatch:UntagResource"
         ]
         Resource = [
-          "arn:aws:cloudwatch::*:dashboard/${var.project_name}-*",
-          "arn:aws:cloudwatch:${var.aws_region}:*:alarm:${var.project_name}-*"
+          "arn:aws:cloudwatch::*:dashboard/${local.project_name}-*",
+          "arn:aws:cloudwatch:${local.aws_region}:*:alarm:${local.project_name}-*"
         ]
       }
     ]
   })
 }
-
-# ──────────────────────────────────────────────
-# Outputs — à récupérer après terraform apply
-# ──────────────────────────────────────────────
 
 output "cicd_access_key_id" {
   description = "AWS_ACCESS_KEY_ID → GitHub Actions secret"
