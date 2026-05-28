@@ -194,7 +194,7 @@ resource "aws_iam_policy" "cicd" {
         Action = [
           "cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DescribeAlarms",
           "cloudwatch:PutDashboard", "cloudwatch:DeleteDashboards", "cloudwatch:GetDashboard",
-          "cloudwatch:TagResource", "cloudwatch:UntagResource"
+          "cloudwatch:ListTagsForResource", "cloudwatch:TagResource", "cloudwatch:UntagResource"
         ]
         Resource = [
           "arn:aws:cloudwatch::*:dashboard/${local.project_name}-*",
