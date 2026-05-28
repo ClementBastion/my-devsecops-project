@@ -40,6 +40,49 @@ jobs:
       - name: Terraform Plan
         run: terraform plan -var="alert_email=${{ secrets.ALERT_EMAIL }}"
 
-      - name: Terraform Apply
+      # ── Sur main uniquement : apply en 3 phases ────────────────────────
+
+      # Phase 1 : créer les repos ECR en premier
+      - name: "Apply phase 1 — ECR repositories"
         if: github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve -var="alert_email=${{ secrets.ALERT_EMAIL }}"
+        run: |
+          terraform apply -auto-approve \
+            -var="alert_email=${{ secrets.ALERT_EMAIL }}" \
+            -target=aws_ecr_repository.lambda_a \
+            -target=aws_ecr_repository.lambda_b \
+            -target=aws_ecr_lifecycle_policy.lambda_a \
+            -target=aws_ecr_lifecycle_policy.lambda_b
+
+      # Phase 2 : pousser une image placeholder si :latest n'existe pas encore
+      - name: Login to ECR
+        if: github.ref == 'refs/heads/main'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registries: ${{ env.AWS_REGION != '' && '' || '' }}
+
+      - name: "Bootstrap ECR — placeholder image si vide"
+        if: github.ref == 'refs/heads/main'
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker pull public.ecr.aws/lambda/python:3.12
+          for LAMBDA in lambda-a lambda-b; do
+            if ! aws ecr describe-images \
+              --repository-name ${{ env.PROJECT_NAME }}/$LAMBDA \
+              --image-ids imageTag=latest 2>/dev/null; then
+              echo "Pas d'image :latest pour $LAMBDA — push placeholder"
+              docker tag public.ecr.aws/lambda/python:3.12 \
+                $REGISTRY/${{ env.PROJECT_NAME }}/$LAMBDA:latest
+              docker push $REGISTRY/${{ env.PROJECT_NAME }}/$LAMBDA:latest
+            else
+              echo "Image :latest déjà présente pour $LAMBDA — skip"
+            fi
+          done
+
+      # Phase 3 : apply complet (Lambdas + tout le reste)
+      - name: "Apply phase 3 — infrastructure complète"
+        if: github.ref == 'refs/heads/main'
+        run: |
+          terraform apply -auto-approve \
+            -var="alert_email=${{ secrets.ALERT_EMAIL }}"
