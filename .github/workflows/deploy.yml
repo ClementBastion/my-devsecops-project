@@ -69,8 +69,6 @@ jobs:
           IMAGE_URI=$REGISTRY/${{ env.PROJECT_NAME }}/${{ matrix.lambda }}:${{ github.sha }}
           docker build -t $IMAGE_URI ${{ matrix.lambda }}/
           docker push $IMAGE_URI
-          docker tag $IMAGE_URI $REGISTRY/${{ env.PROJECT_NAME }}/${{ matrix.lambda }}:latest
-          docker push $REGISTRY/${{ env.PROJECT_NAME }}/${{ matrix.lambda }}:latest
 
   # ─── Mise à jour des fonctions Lambda ─────────────────────────────────
   deploy:
