@@ -52,7 +52,7 @@ def handler(event: dict, context) -> dict:
 
     # ── Healthcheck ──
     path = event.get("rawPath", "")
-    if path == "/health":
+    if path.endswith("/health"):
         return _response(200, {"status": "ok", "lambda": "A", "request_id": request_id})
 
     # ── Lecture du body ──
