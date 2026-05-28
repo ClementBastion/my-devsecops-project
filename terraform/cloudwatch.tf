@@ -87,9 +87,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       {
         type = "metric"
         properties = {
-          title  = "Lambda A — Invocations & Erreurs"
-          period = 60
-          stat   = "Sum"
+          title   = "Lambda A — Invocations & Erreurs"
+          region  = var.aws_region
+          period  = 60
+          stat    = "Sum"
           metrics = [
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.lambda_a.function_name],
             ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.lambda_a.function_name]
@@ -99,9 +100,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       {
         type = "metric"
         properties = {
-          title  = "Lambda B — Invocations & Erreurs"
-          period = 60
-          stat   = "Sum"
+          title   = "Lambda B — Invocations & Erreurs"
+          region  = var.aws_region
+          period  = 60
+          stat    = "Sum"
           metrics = [
             ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.lambda_b.function_name],
             ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.lambda_b.function_name]
@@ -111,9 +113,10 @@ resource "aws_cloudwatch_dashboard" "main" {
       {
         type = "metric"
         properties = {
-          title  = "SQS — Messages en queue"
-          period = 60
-          stat   = "Average"
+          title   = "SQS — Messages en queue"
+          region  = var.aws_region
+          period  = 60
+          stat    = "Average"
           metrics = [
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.main.name],
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.dlq.name]
@@ -123,8 +126,9 @@ resource "aws_cloudwatch_dashboard" "main" {
       {
         type = "metric"
         properties = {
-          title  = "API Gateway — Requêtes & Latence"
-          period = 60
+          title   = "API Gateway — Requêtes & Latence"
+          region  = var.aws_region
+          period  = 60
           metrics = [
             ["AWS/ApiGateway", "Count", "ApiId", aws_apigatewayv2_api.http.id],
             ["AWS/ApiGateway", "Latency", "ApiId", aws_apigatewayv2_api.http.id]

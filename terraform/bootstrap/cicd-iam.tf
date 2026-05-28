@@ -74,18 +74,20 @@ resource "aws_iam_policy" "cicd" {
           "lambda:CreateFunction", "lambda:DeleteFunction",
           "lambda:GetFunction", "lambda:GetFunctionConfiguration",
           "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration",
-          "lambda:AddPermission", "lambda:RemovePermission",
-          "lambda:CreateEventSourceMapping", "lambda:UpdateEventSourceMapping",
-          "lambda:DeleteEventSourceMapping", "lambda:GetEventSourceMapping",
+          "lambda:AddPermission", "lambda:RemovePermission", "lambda:GetPolicy",
           "lambda:ListVersionsByFunction",
           "lambda:TagResource", "lambda:UntagResource", "lambda:ListTags"
         ]
         Resource = "arn:aws:lambda:${local.aws_region}:*:function:${local.project_name}-*"
       },
       {
-        Sid      = "LambdaEventSourceList"
-        Effect   = "Allow"
-        Action   = "lambda:ListEventSourceMappings"
+        Sid    = "LambdaEventSourceMapping"
+        Effect = "Allow"
+        Action = [
+          "lambda:CreateEventSourceMapping", "lambda:UpdateEventSourceMapping",
+          "lambda:DeleteEventSourceMapping", "lambda:GetEventSourceMapping",
+          "lambda:ListEventSourceMappings"
+        ]
         Resource = "*"
       },
 
