@@ -86,6 +86,10 @@ resource "aws_lambda_function" "lambda_a" {
   }
 
   depends_on = [aws_cloudwatch_log_group.lambda_a]
+
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
 }
 
 # Autorisation API Gateway → Lambda A
@@ -120,6 +124,10 @@ resource "aws_lambda_function" "lambda_b" {
   }
 
   depends_on = [aws_cloudwatch_log_group.lambda_b]
+
+  lifecycle {
+    ignore_changes = [image_uri]
+  }
 }
 
 # Trigger Lambda B depuis SQS
