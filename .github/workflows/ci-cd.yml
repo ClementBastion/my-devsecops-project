@@ -128,3 +128,4 @@ jobs:
             --image-uri ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}/lambda-b:${{ github.sha }}
           aws lambda wait function-updated \
             --function-name ${{ env.PROJECT_NAME }}-lambda-b-${{ env.ENVIRONMENT }}
+# Test CI/CD pipeline — 2026-05-28 13:09
