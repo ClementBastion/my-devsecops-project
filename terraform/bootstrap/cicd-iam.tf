@@ -107,7 +107,7 @@ resource "aws_iam_policy" "cicd" {
           "events:CreateEventBus", "events:DeleteEventBus", "events:DescribeEventBus",
           "events:PutRule", "events:DeleteRule", "events:DescribeRule",
           "events:PutTargets", "events:RemoveTargets", "events:ListTargetsByRule",
-          "events:TagResource", "events:UntagResource"
+          "events:ListTagsForResource", "events:TagResource", "events:UntagResource"
         ]
         Resource = [
           "arn:aws:events:${local.aws_region}:*:event-bus/${local.project_name}-*",
@@ -137,7 +137,7 @@ resource "aws_iam_policy" "cicd" {
           "sns:GetTopicAttributes", "sns:SetTopicAttributes",
           "sns:Subscribe", "sns:Unsubscribe", "sns:GetSubscriptionAttributes",
           "sns:ListSubscriptionsByTopic",
-          "sns:TagResource", "sns:UntagResource"
+          "sns:ListTagsForResource", "sns:TagResource", "sns:UntagResource"
         ]
         Resource = "arn:aws:sns:${local.aws_region}:*:${local.project_name}-*"
       },
@@ -166,10 +166,18 @@ resource "aws_iam_policy" "cicd" {
 
       # ── CloudWatch Logs ───────────────────────────────────────────────
       {
+        Sid    = "CloudWatchLogsDescribe"
+        Effect = "Allow"
+        # DescribeLogGroups est appelé par le provider TF avec un filtre global,
+        # AWS évalue la permission sur "*" indépendamment du filtre envoyé
+        Action   = "logs:DescribeLogGroups"
+        Resource = "*"
+      },
+      {
         Sid    = "CloudWatchLogs"
         Effect = "Allow"
         Action = [
-          "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:DescribeLogGroups",
+          "logs:CreateLogGroup", "logs:DeleteLogGroup",
           "logs:PutRetentionPolicy", "logs:DeleteRetentionPolicy",
           "logs:ListTagsForResource", "logs:TagResource", "logs:UntagResource"
         ]
